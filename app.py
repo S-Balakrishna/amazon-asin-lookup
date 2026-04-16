@@ -6,6 +6,10 @@ import time
 import random
 import io
 
+pwd = st.text_input("Enter password", type="password")
+if pwd != st.secrets["PASSWORD"]:
+    st.stop()
+    
 st.set_page_config(page_title="Amazon ASIN Lookup", page_icon="🛒", layout="centered")
 
 st.title("🛒 Amazon ASIN Lookup")
