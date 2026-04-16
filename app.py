@@ -17,13 +17,9 @@ def get_driver():
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
     from selenium.webdriver.chrome.service import Service
-    try:
-        from webdriver_manager.chrome import ChromeDriverManager
-        service = Service(ChromeDriverManager().install())
-    except Exception:
-        service = Service()   # fallback: assume chromedriver is on PATH
 
     options = Options()
+    options.binary_location = "/usr/bin/chromium"
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
@@ -33,6 +29,7 @@ def get_driver():
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     )
+    service = Service("/usr/bin/chromedriver")
     return webdriver.Chrome(service=service, options=options)
 
 
