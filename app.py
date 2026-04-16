@@ -19,10 +19,7 @@ header {visibility: hidden;}
 """, unsafe_allow_html=True)
 
 # Password gate
-pwd = st.text_input("Enter password", type="password")
-if pwd != st.secrets["PASSWORD"]:
-    st.warning("Enter the password to continue." if pwd else "")
-    st.stop()
+
 
 st.title("🛒 Amazon ASIN Lookup")
 st.caption("Fetch product titles from Amazon.in — single ASIN or bulk CSV upload")
