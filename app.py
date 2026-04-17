@@ -6,9 +6,13 @@ import time
 import random
 import io
 
-
-    
 st.set_page_config(page_title="Amazon ASIN Lookup", page_icon="🛒", layout="centered")
+
+# ── Password gate ─────────────────────────────────────────────────────────────
+pwd = st.text_input("Enter password", type="password")
+if pwd != st.secrets["PASSWORD"]:
+    st.warning("Enter the password to continue." if pwd else "")
+    st.stop()
 
 st.markdown("""
 <style>
@@ -18,13 +22,10 @@ header {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
-# Password gate
-
-
 st.title("🛒 Amazon ASIN Lookup")
-st.caption("Fetch product titles from Amazon.in — single ASIN or bulk CSV upload")
+st.caption("Fetch product titles, ratings & reviews from Amazon.in")
 
-# ── helpers ──────────────────────────────────────────────────────────────────
+# ── helpers ───────────────────────────────────────────────────────────────────
 
 def get_driver():
     from selenium import webdriver
@@ -46,16 +47,47 @@ def get_driver():
     return webdriver.Chrome(service=service, options=options)
 
 
-def fetch_title(driver, asin: str) -> str:
+def fetch_product(driver, asin: str) -> dict:
     from selenium.webdriver.common.by import By
+
     url = f"https://www.amazon.in/dp/{asin}"
+    result = {
+        "ASIN": asin,
+        "Amazon URL": url,
+        "Product Title": "Not found",
+        "Rating": "N/A",
+        "No. of Reviews": "N/A",
+    }
     try:
         driver.get(url)
         time.sleep(random.uniform(2, 4))
-        title = driver.find_element(By.ID, "productTitle").text.strip()
-        return title if title else "Title not found"
+
+        # Title
+        try:
+            result["Product Title"] = driver.find_element(By.ID, "productTitle").text.strip()
+        except Exception:
+            pass
+
+        # Rating  e.g. "4.2 out of 5 stars"
+        try:
+            rating_text = driver.find_element(
+                By.CSS_SELECTOR, "span.a-icon-alt"
+            ).get_attribute("innerHTML").strip()
+            result["Rating"] = rating_text.split(" ")[0]   # just "4.2"
+        except Exception:
+            pass
+
+        # Number of reviews  e.g. "1,234 ratings"
+        try:
+            reviews = driver.find_element(By.ID, "acrCustomerReviewText").text.strip()
+            result["No. of Reviews"] = reviews.split(" ")[0]   # just "1,234"
+        except Exception:
+            pass
+
     except Exception:
-        return "Title not found"
+        pass
+
+    return result
 
 
 def build_excel(results: list[dict]) -> bytes:
@@ -63,14 +95,15 @@ def build_excel(results: list[dict]) -> bytes:
     ws = wb.active
     ws.title = "Amazon Products"
 
-    header_fill   = PatternFill("solid", start_color="2E75B6", end_color="2E75B6")
-    header_font   = Font(bold=True, color="FFFFFF", name="Arial", size=11)
-    url_font      = Font(color="0563C1", underline="single", name="Arial", size=10)
-    normal_font   = Font(name="Arial", size=10)
-    center        = Alignment(horizontal="center", vertical="center")
-    left          = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    header_fill = PatternFill("solid", start_color="2E75B6", end_color="2E75B6")
+    header_font = Font(bold=True, color="FFFFFF", name="Arial", size=11)
+    url_font    = Font(color="0563C1", underline="single", name="Arial", size=10)
+    normal_font = Font(name="Arial", size=10)
+    center      = Alignment(horizontal="center", vertical="center")
+    left        = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
-    for col, h in enumerate(["ASIN", "Amazon URL", "Product Title"], 1):
+    headers = ["ASIN", "Amazon URL", "Product Title", "Rating", "No. of Reviews"]
+    for col, h in enumerate(headers, 1):
         c = ws.cell(row=1, column=col, value=h)
         c.fill = header_fill
         c.font = header_font
@@ -89,9 +122,19 @@ def build_excel(results: list[dict]) -> bytes:
         tc.font = normal_font
         tc.alignment = left
 
+        rc = ws.cell(row=r, column=4, value=row["Rating"])
+        rc.font = normal_font
+        rc.alignment = center
+
+        nrc = ws.cell(row=r, column=5, value=row["No. of Reviews"])
+        nrc.font = normal_font
+        nrc.alignment = center
+
     ws.column_dimensions["A"].width = 18
     ws.column_dimensions["B"].width = 40
     ws.column_dimensions["C"].width = 70
+    ws.column_dimensions["D"].width = 12
+    ws.column_dimensions["E"].width = 18
     ws.freeze_panes = "A2"
 
     buf = io.BytesIO()
@@ -103,12 +146,12 @@ def build_excel(results: list[dict]) -> bytes:
 
 tab1, tab2 = st.tabs(["🔍 Single ASIN", "📁 Bulk CSV Upload"])
 
-# ─── Tab 1: Single ASIN ───────────────────────────────────────────────────────
+# ─── Tab 1: Single ASIN ──────────────────────────────────────────────────────
 with tab1:
     st.subheader("Look up one product")
     asin_input = st.text_input("Enter ASIN", placeholder="e.g. B0CHX3QBCH", max_chars=12)
 
-    if st.button("Fetch Title", type="primary", key="single_btn"):
+    if st.button("Fetch", type="primary", key="single_btn"):
         asin = asin_input.strip().upper()
         if not asin:
             st.warning("Please enter an ASIN.")
@@ -116,19 +159,19 @@ with tab1:
             with st.spinner("Opening Amazon page…"):
                 try:
                     driver = get_driver()
-                    title = fetch_title(driver, asin)
+                    row = fetch_product(driver, asin)
                     driver.quit()
 
-                    url = f"https://www.amazon.in/dp/{asin}"
-                    results = [{"ASIN": asin, "Amazon URL": url, "Product Title": title}]
-
-                    if title == "Title not found":
-                        st.error(f"❌ Could not find title for **{asin}**. The product may be unavailable or the page was blocked.")
+                    if row["Product Title"] == "Not found":
+                        st.error(f"❌ Could not find product for **{asin}**. It may be unavailable or the page was blocked.")
                     else:
-                        st.success(f"✅ **{title}**")
-                        st.markdown(f"[View on Amazon.in]({url})")
+                        st.success(f"✅ **{row['Product Title']}**")
+                        col1, col2 = st.columns(2)
+                        col1.metric("Rating", row["Rating"])
+                        col2.metric("Reviews", row["No. of Reviews"])
+                        st.markdown(f"[View on Amazon.in]({row['Amazon URL']})")
 
-                    excel_bytes = build_excel(results)
+                    excel_bytes = build_excel([row])
                     st.download_button(
                         label="⬇️ Download Excel",
                         data=excel_bytes,
@@ -136,21 +179,17 @@ with tab1:
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     )
                 except Exception as e:
-                    st.error(f"Error: {e}\n\nMake sure Chrome + chromedriver are installed.")
+                    st.error(f"Error: {e}")
 
-# ─── Tab 2: Bulk CSV ──────────────────────────────────────────────────────────
+# ─── Tab 2: Bulk CSV ─────────────────────────────────────────────────────────
 with tab2:
     st.subheader("Look up many products")
-    st.markdown(
-        "Upload a CSV with a column named **`ASIN`**. "
-        "You'll get back an Excel file with titles + clickable links."
-    )
+    st.markdown("Upload a CSV with a column named **`ASIN`**.")
 
     with st.expander("📋 Sample CSV format"):
         sample = pd.DataFrame({"ASIN": ["B0CHX3QBCH", "B09G9HD6PD", "B08N5WRWNW"]})
         st.dataframe(sample, use_container_width=True)
-        sample_csv = sample.to_csv(index=False).encode()
-        st.download_button("Download sample CSV", sample_csv, "sample_asins.csv", "text/csv")
+        st.download_button("Download sample CSV", sample.to_csv(index=False).encode(), "sample_asins.csv", "text/csv")
 
     uploaded = st.file_uploader("Upload CSV", type=["csv"])
 
@@ -174,20 +213,18 @@ with tab2:
                     driver = get_driver()
 
                     for i, asin in enumerate(asins, 1):
-                        url   = f"https://www.amazon.in/dp/{asin}"
-                        title = fetch_title(driver, asin)
-                        results.append({"ASIN": asin, "Amazon URL": url, "Product Title": title})
+                        row = fetch_product(driver, asin)
+                        results.append(row)
 
-                        if title != "Title not found":
+                        if row["Product Title"] != "Not found":
                             found_count += 1
 
                         progress_bar.progress(i / total)
                         status_text.markdown(
                             f"Processing **{i}/{total}** — "
-                            f"{'✅' if title != 'Title not found' else '❌'} `{asin}`"
+                            f"{'✅' if row['Product Title'] != 'Not found' else '❌'} `{asin}`"
                         )
 
-                        # batch pause every 50
                         if i % 50 == 0 and i < total:
                             status_text.markdown(f"⏸ Pausing 15s to avoid blocks… ({i}/{total} done)")
                             time.sleep(15)
@@ -201,7 +238,7 @@ with tab2:
                 progress_bar.empty()
                 status_text.empty()
 
-                st.success(f"✅ Done! **{found_count}/{total}** titles fetched successfully.")
+                st.success(f"✅ Done! **{found_count}/{total}** products fetched successfully.")
 
                 excel_bytes = build_excel(results)
                 st.download_button(
@@ -211,13 +248,12 @@ with tab2:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
 
-                # preview
                 with st.expander("Preview results"):
                     st.dataframe(
-                        pd.DataFrame(results)[["ASIN", "Product Title"]],
+                        pd.DataFrame(results)[["ASIN", "Product Title", "Rating", "No. of Reviews"]],
                         use_container_width=True,
                     )
 
 # ── footer ────────────────────────────────────────────────────────────────────
 st.divider()
-st.caption("Tip: Amazon may occasionally block requests. If titles come back empty, wait 10–15 minutes and try again with a smaller batch.")
+st.caption("Tip: Amazon may occasionally block requests. If data comes back empty, wait 10–15 minutes and try again with a smaller batch.")
