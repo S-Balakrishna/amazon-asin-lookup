@@ -8,11 +8,7 @@ import io
 
 st.set_page_config(page_title="Amazon ASIN Lookup", page_icon="🛒", layout="centered")
 
-# ── Password gate ─────────────────────────────────────────────────────────────
-pwd = st.text_input("Enter password", type="password")
-if pwd != st.secrets["PASSWORD"]:
-    st.warning("Enter the password to continue." if pwd else "")
-    st.stop()
+# ── Password gate ────────────────────────────────────────────────────────────
 
 st.markdown("""
 <style>
